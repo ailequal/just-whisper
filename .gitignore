@@ -1,0 +1,22 @@
+# Recordings and transcripts are personal data: keep them out of git.
+recordings/*
+!recordings/.gitkeep
+# recordings/originals/ (sources copied by `just convert`) is covered by the line above
+transcripts/*
+!transcripts/.gitkeep
+
+# personal vocabulary prompts (just prompt); the examples next to them are tracked
+config/lang/*/prompt.txt
+
+# ggml models downloaded by `just models` (1.5 GiB); the source lives in the submodule vendor/whisper.cpp
+models/*
+!models/.gitkeep
+
+# uv project environment (uv sync); the Core ML conversion uses a throwaway one.
+.venv/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/

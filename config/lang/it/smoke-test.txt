@@ -1,0 +1,2 @@
+Buongiorno a tutti, questo è un test di trascrizione in italiano con whisper.
+trascrizione

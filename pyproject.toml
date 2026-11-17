@@ -1,0 +1,15 @@
+[project]
+name = "just-whisper"
+version = "1.0.0"
+description = "Local, offline speech-to-text on Apple Silicon: record or convert audio, transcribe it with whisper.cpp and large-v3-turbo."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Elia Pari" }]
+requires-python = ">=3.15"
+dependencies = []
+
+[tool.uv]
+# Not a distributable package: uv manages the interpreter and runs the scripts in scripts/.
+package = false
+python-preference = "managed"
