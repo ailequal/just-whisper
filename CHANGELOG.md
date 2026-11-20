@@ -4,6 +4,8 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-20
+
 ### Added
 
 - Pause and resume while recording, with `p` or the space bar (`just record`).
@@ -54,6 +56,7 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 - Optional Core ML encoder build (`just coreml`), kept by later builds while the encoder is in `models/`.
 - README, GUIDE with setup, recording methods, tuning, scenarios, FAQ and cheat sheet; MIT license.
 
-[Unreleased]: https://github.com/ailequal/just-whisper/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ailequal/just-whisper/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ailequal/just-whisper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ailequal/just-whisper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ailequal/just-whisper/releases/tag/v1.0.0
