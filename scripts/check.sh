@@ -28,6 +28,11 @@ for tool in uv cmake ffmpeg; do
     row "$tool" "missing: run \`just deps\`"; status=1
   fi
 done
+if command -v swiftc >/dev/null && swift_version="$(swiftc --version 2>/dev/null | head -1)" && [ -n "$swift_version" ]; then
+  row swiftc "$swift_version (builds the microphone recorder)"
+else
+  row swiftc "missing (only for \`just record\`, \`just live\` and \`just devices\`): xcode-select --install"
+fi
 if command -v uv >/dev/null; then
   if py="$(uv run --no-sync python -VV 2>/dev/null)"; then
     row python "$py (pinned $(cat .python-version), via uv)"
@@ -66,6 +71,6 @@ case "$prompt_src" in
   *) row prompt "$prompt_src" ;;
 esac
 
-echo "microphones (ffmpeg avfoundation, use the index as MIC_DEVICE):"
-scripts/devices.sh | sed 's/^/  /'
+echo "microphones (use the index as MIC_DEVICE):"
+scripts/devices.sh | sed 's/^/  /' || echo "  not listed: the microphone recorder could not be built"
 exit "$status"

@@ -23,7 +23,6 @@ to_wav16k "$src" "$out"
 echo "saved $out ($(audio_seconds "$out")s)"
 audio_level_report "$out"
 
-originals_dir="$recordings_dir/originals"
 case "$(cd "$(dirname "$src")" && pwd)" in
   "$(abspath "$recordings_dir")"|"$(abspath "$originals_dir")") ;;   # already ours, nothing to keep
   *)

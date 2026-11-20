@@ -48,7 +48,7 @@ tool_purpose() {
     just) echo "runs the recipes" ;;
     uv) echo "installs and runs Python" ;;
     cmake) echo "builds whisper.cpp" ;;
-    ffmpeg) echo "records, converts and plays audio" ;;
+    ffmpeg) echo "converts and plays audio" ;;
     sdl2) echo "optional: whisper-stream for \`just live\`" ;;
     shellcheck) echo "optional: \`just lint\`" ;;
   esac
@@ -78,7 +78,7 @@ case "${SHELL:-}" in
 esac
 ok shell "$shell_name login shell; the scripts run in bash whatever the login shell is"
 if clt="$(xcode-select -p 2>/dev/null)"; then
-  ok xcode-clt "$clt ($(git --version 2>/dev/null | cut -d' ' -f3 | sed 's/^/git /'))"
+  ok xcode-clt "$clt ($(git --version 2>/dev/null | cut -d' ' -f3 | sed 's/^/git /'), swiftc for the microphone recorder)"
 else
   miss xcode-clt "Xcode Command Line Tools: run \`xcode-select --install\`, accept the dialog, then run this again"; status=1
 fi

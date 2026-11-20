@@ -81,7 +81,7 @@ rebuild:
 models:
     scripts/models.sh
 
-[doc('Check tools, Python, whisper.cpp version, binaries, models and the microphones seen by ffmpeg')]
+[doc('Check tools, Python, whisper.cpp version, binaries, models and the microphones')]
 [group('setup')]
 check:
     scripts/check.sh
@@ -95,12 +95,12 @@ prompt:
 # Record
 # ---------------------------------------------------------------------------
 
-[doc('List the audio input devices ffmpeg can record from (index = MIC_DEVICE)')]
+[doc('List the audio input devices (index = MIC_DEVICE)')]
 [group('record')]
 devices:
     scripts/devices.sh
 
-[doc('Record the microphone to recordings/<name>.wav, 16 kHz mono; q stops, or give a duration: just record [name] [seconds]')]
+[doc('Record the microphone at full quality to recordings/originals/<name>.wav, plus recordings/<name>.wav at 16 kHz mono; q stops, or give a duration: just record [name] [seconds]')]
 [group('record')]
 record name="" seconds="":
     scripts/record.sh "$@"
@@ -110,7 +110,7 @@ record name="" seconds="":
 convert src name="":
     scripts/convert.sh "$@"
 
-[doc('Play back a recording from the terminal: just play name')]
+[doc('Play back a recording from the terminal, the full-quality original when there is one: just play name')]
 [group('record')]
 play name:
     scripts/play.sh "$@"

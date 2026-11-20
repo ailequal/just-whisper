@@ -31,7 +31,7 @@ whisper_submodule="vendor/whisper.cpp"           # where the submodule is record
 : "${WHISPER_REPO:=https://github.com/ggml-org/whisper.cpp.git}"
 : "${WHISPER_REF:=}"                            # ref for checkout/upgrade; empty means the recorded submodule commit
 : "${WHISPER_MODELS_DIR:=models}"               # where the ggml models live (outside the source tree)
-: "${WHISPER_RECORDINGS_DIR:=recordings}"       # where the 16 kHz WAV recordings live
+: "${WHISPER_RECORDINGS_DIR:=recordings}"       # where the 16 kHz WAV recordings live (full-quality originals in originals/)
 : "${WHISPER_TRANSCRIPTS_DIR:=transcripts}"     # where the transcripts and exports are written
 : "${WHISPER_MODEL:=large-v3-turbo}"            # ggml model name
 : "${WHISPER_VAD:=silero-v6.2.0}"               # VAD model name
@@ -41,14 +41,17 @@ whisper_submodule="vendor/whisper.cpp"           # where the submodule is record
 : "${WHISPER_VERBATIM:=0}"                      # 1: surround the prompt with the language's fillers so whisper keeps them
 : "${LOW_CONFIDENCE:=0.6}"                      # segments with a mean token probability below this are marked in stats and export
 : "${RECHECK_MODEL:=large-v3}"                  # full model used by `just recheck` on the low-confidence segments
-: "${MIC_DEVICE:=0}"                            # ffmpeg avfoundation audio device index
+: "${MIC_DEVICE:=0}"                            # audio input index, as listed by `just devices`
 : "${COREML_PYTHON:=3.13}"                      # newest Python supported by coremltools
 : "${STATS_TARGET_WPM:=}"                       # optional target pace in words per minute for `just stats`; empty: no comparison
 
 # --- derived paths ------------------------------------------------------------
 recordings_dir="$WHISPER_RECORDINGS_DIR"
+originals_dir="$recordings_dir/originals"        # full-quality microphone takes and the sources of `just convert`
 transcripts_dir="$WHISPER_TRANSCRIPTS_DIR"
 stats_script="scripts/transcript-stats.py"
+mic_capture_src="scripts/mic-capture.swift"      # the microphone recorder, compiled on first use
+mic_capture_bin=".build/mic-capture"
 lang_root="config/lang"                          # one directory per language code, see config/lang/README.md
 lang_dir="$lang_root/$WHISPER_LANG"
 fillers_file="$lang_dir/fillers.txt"
@@ -81,6 +84,16 @@ whisper_checkout_present() {
 }
 need_checkout() { whisper_checkout_present || die "whisper.cpp checkout missing at $WHISPER_DIR: run \`just clone\`"; }
 
+# Build the microphone recorder when it is missing or older than its source. The Swift compiler
+# comes with the Xcode Command Line Tools.
+need_mic_capture() {
+  [ "$mic_capture_bin" -nt "$mic_capture_src" ] && return 0
+  command -v swiftc >/dev/null 2>&1 || die "swiftc is missing: install the Xcode Command Line Tools with \`xcode-select --install\`"
+  echo "building the microphone recorder $mic_capture_bin (once)" >&2
+  mkdir -p "$(dirname "$mic_capture_bin")"
+  swiftc -O -o "$mic_capture_bin" "$mic_capture_src" || die "cannot build $mic_capture_src: check the Xcode Command Line Tools with \`just deps check\`"
+}
+
 # The recording, playback and text-to-speech steps use macOS frameworks and tools.
 need_macos() { [ "$(uname -s)" = Darwin ] || die "$1 needs macOS (avfoundation, say): this project targets Apple Silicon Macs"; }
 # True when the process runs natively on Apple Silicon (not Intel, not under Rosetta).
@@ -104,6 +117,9 @@ whisper_pin_matches() { [ "$(git -C "$WHISPER_DIR" rev-parse HEAD 2>/dev/null)" 
 # Duration of an audio file in whole seconds.
 audio_seconds() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" | awk '{ printf "%d", $1 + 0.5 }'; }
 
+# Sample rate and channel count of an audio file, for example "48000 Hz, 1 ch".
+audio_format() { ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate,channels -of csv=p=0 "$1" | awk -F, '{ printf "%s Hz, %s ch", $1, $2 }'; }
+
 # Convert any audio or video file to the 16 kHz mono 16-bit WAV that whisper-cli reads.
 to_wav16k() { ffmpeg -hide_banner -loglevel error -y -i "$1" -vn -ar 16000 -ac 1 -c:a pcm_s16le "$2"; }
 
@@ -111,7 +127,7 @@ to_wav16k() { ffmpeg -hide_banner -loglevel error -y -i "$1" -vn -ar 16000 -ac 1
 audio_mean_db() { ffmpeg -hide_banner -nostats -i "$1" -af volumedetect -f null - 2>&1 | sed -n 's/.*mean_volume: \([-0-9.]*\) dB.*/\1/p'; }
 
 # Print the level of a recording and warn when it is close to silence: a denied microphone
-# permission or a muted input records silence without any error from ffmpeg.
+# permission or a muted input records silence without any error.
 audio_level_report() {
   local mean
   mean="$(audio_mean_db "$1")"

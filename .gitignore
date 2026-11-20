@@ -1,7 +1,7 @@
 # Recordings and transcripts are personal data: keep them out of git.
 recordings/*
 !recordings/.gitkeep
-# recordings/originals/ (sources copied by `just convert`) is covered by the line above
+# recordings/originals/ (full-quality takes of `just record`, sources copied by `just convert`) is covered by the line above
 transcripts/*
 !transcripts/.gitkeep
 
@@ -11,6 +11,9 @@ config/lang/*/prompt.txt
 # ggml models downloaded by `just models` (1.5 GiB); the source lives in the submodule vendor/whisper.cpp
 models/*
 !models/.gitkeep
+
+# microphone recorder compiled from scripts/mic-capture.swift
+.build/
 
 # uv project environment (uv sync); the Core ML conversion uses a throwaway one.
 .venv/

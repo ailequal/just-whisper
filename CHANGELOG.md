@@ -4,6 +4,24 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-20
+
+### Added
+
+- Full-quality microphone takes in `recordings/originals/<name>.wav`, at the sample rate and channel count of the device, 24-bit (`just record`, `just live`).
+- Elapsed time and peak level shown while recording; warnings for clipped input and lost audio.
+- Swift compiler reported by `just check`.
+
+### Changed
+
+- `just record`, `just live` and `just devices` use the Swift recorder `scripts/mic-capture.swift`, compiled on first use into `.build/`, in place of ffmpeg's `avfoundation` input.
+- `recordings/<name>.wav` at 16 kHz mono is derived from the full-quality take.
+- `just play` plays the file in `recordings/originals/` when there is one.
+
+### Fixed
+
+- Audio lost while recording from the microphone.
+
 ## [1.0.0] - 2026-11-17
 
 ### Added
@@ -24,5 +42,6 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 - Optional Core ML encoder build (`just coreml`), kept by later builds while the encoder is in `models/`.
 - README, GUIDE with setup, recording methods, tuning, scenarios, FAQ and cheat sheet; MIT license.
 
-[Unreleased]: https://github.com/ailequal/just-whisper/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ailequal/just-whisper/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ailequal/just-whisper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ailequal/just-whisper/releases/tag/v1.0.0

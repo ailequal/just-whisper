@@ -32,6 +32,7 @@ microphone / QuickTime / Voice Memos / Meet, Zoom, Teams recording / any audio o
         │  (any format)
         ▼
 ffmpeg ──► recordings/<name>.wav      16 kHz, mono, 16-bit PCM: one format for every source
+           recordings/originals/      the source file, or the full-quality microphone take
         │
         ▼
 whisper-cli (Metal GPU) ──► transcripts/<name>.txt   plain text, one line per segment
@@ -51,7 +52,7 @@ just transcribe-file <file> does convert, transcribe and export in one go.
 
 Three things make this reliable:
 
-- **Audio format.** Every source becomes a 16-bit WAV at 16 kHz mono, the sample rate Whisper was trained on. whisper-cli also reads flac, mp3 and ogg by itself, but not m4a, mp4 or mov, which is what phones, QuickTime and meeting apps produce. ffmpeg converts all of them, so every later step finds the same format. Recording directly at that format with ffmpeg skips the conversion.
+- **Audio format.** Every source becomes a 16-bit WAV at 16 kHz mono, the sample rate Whisper was trained on. whisper-cli also reads flac, mp3 and ogg by itself, but not m4a, mp4 or mov, which is what phones, QuickTime and meeting apps produce. ffmpeg converts all of them, so every later step finds the same format. `just record` keeps the microphone take at full quality and derives this file from it.
 - **Model and backend.** `large-v3-turbo` is large-v3 with the decoder cut from 32 layers to 4 (about 809 M parameters instead of 1.55 B). It keeps nearly all the accuracy and decodes several times faster. On Apple Silicon, whisper.cpp runs it on the GPU through Metal by default, so no extra configuration is needed.
 - **Vocabulary prompt.** Whisper accepts an initial prompt that biases spelling. Without it, a company name came out as two common words in the first test; with the name in the prompt it came out right. Your prompt lives in `config/lang/<language>/prompt.txt` (`just prompt`).
 
@@ -76,13 +77,13 @@ The Core ML path (encoder on the Neural Engine) is an optional speed-up for the 
 
 | Tool                     | Why                                                       | Install                                                        |
 | ------------------------ | --------------------------------------------------------- | -------------------------------------------------------------- |
-| Xcode Command Line Tools | compiler, `git`, Metal headers                            | `xcode-select --install`                                       |
+| Xcode Command Line Tools | C++ and Swift compilers, `git`, Metal headers             | `xcode-select --install`                                       |
 | Homebrew                 | package manager, hard requirement                         | https://brew.sh                                                |
 | `just` 1.27+             | runs the recipes in `justfile`                            | `brew install just` (also done by `scripts/deps.sh install`)   |
 | `uv`                     | installs Python and runs every Python command             | `brew install uv` (also done by `just deps`)                   |
 | Python 3.15              | the stats and export scripts; pinned in `.python-version` | `just python` (uv downloads and manages it)                    |
 | `cmake`                  | builds whisper.cpp                                        | `brew install cmake` (also done by `just deps`)                |
-| `ffmpeg`                 | records, converts, plays audio                            | `brew install ffmpeg` (also done by `just deps`)               |
+| `ffmpeg`                 | converts and plays audio                                  | `brew install ffmpeg` (also done by `just deps`)               |
 | `sdl2`                   | optional, only for live `whisper-stream`                  | `brew install sdl2` (also done by `just deps`)                 |
 | Node.js 26 LTS           | optional, only for Prettier in `just format-docs`         | `nvm install` (reads `.nvmrc`) or `brew install node`          |
 | `shellcheck`             | optional, only for `just lint` on the scripts             | `brew install shellcheck` (also done by `just deps`)           |
@@ -121,7 +122,7 @@ Check what is there:
 just check
 ```
 
-It prints the macOS version and chip, the login shell, tool versions, the whisper.cpp version and binaries, the models, the prompt file, and the microphones ffmpeg sees. Each missing item names the recipe that fixes it, and a Rosetta terminal or an Intel Homebrew in `/usr/local` is flagged.
+It prints the macOS version and chip, the login shell, tool versions, the whisper.cpp version and binaries, the models, the prompt file, and the microphones. Each missing item names the recipe that fixes it, and a Rosetta terminal or an Intel Homebrew in `/usr/local` is flagged.
 
 ## 4. Get whisper.cpp, at a release
 
@@ -216,9 +217,9 @@ Other models you may want (`WHISPER_MODEL=<name> just models`): `large-v3-turbo-
 
 Only for recording with the Mac; skip it if your audio comes from files.
 
-1. **Microphone permission for the terminal.** The first time ffmpeg (or whisper-stream) opens the microphone, macOS asks for permission for the app that launched it: Terminal, iTerm, Ghostty, VS Code. If you ever denied it, enable it in System Settings, Privacy & Security, Microphone. A denied app records silence with no error.
+1. **Microphone permission for the terminal.** The first time the recorder (or whisper-stream) opens the microphone, macOS asks for permission for the app that launched it: Terminal, iTerm, Ghostty, VS Code. If you ever denied it, enable it in System Settings, Privacy & Security, Microphone. A denied app is refused with a message, or records silence with no error.
 2. **Pick the input.** System Settings, Sound, Input: choose the device and watch the level meter while speaking normally. Aim for the meter to move to about two thirds; lower the input volume if it hits the end.
-3. **List what ffmpeg sees.** The index on the left is what `MIC_DEVICE` expects (default `0`).
+3. **List the inputs.** The index on the left is what `MIC_DEVICE` expects (default `0`).
 
    ```bash
    just devices
@@ -229,9 +230,10 @@ Only for recording with the Mac; skip it if your audio comes from files.
 
    ```bash
    just record check 5
-   # saved recordings/check.wav (5s)
+   # saved recordings/check.wav (5s, 16 kHz mono for whisper)
+   # full quality: recordings/originals/check.wav (48000 Hz, 1 ch)
    # level: -27.4 dB mean (speech is usually between -35 and -20 dB)
-   just play check
+   just play check          # plays the full-quality take
    ```
 
 Which microphone:
@@ -243,23 +245,36 @@ Which microphone:
 
 ## 8. Get the audio in
 
-Every method ends with a file in `recordings/<name>.wav` at 16 kHz mono. `recordings/` is git-ignored; a date in the name keeps things sorted: `2026-10-28-meeting`, `2026-10-29-idea-2`. Names are made safe before use: lowercase, ASCII letters, digits, dot, underscore and dash, everything else becomes a dash (`My Memo (2).m4a` becomes `my-memo-2`, and the script prints the name it chose). Accented letters are dropped, so give a name yourself when the file name has them. Keep the originals: `just convert` copies them to `recordings/originals/`.
+Every method ends with a file in `recordings/<name>.wav` at 16 kHz mono. `recordings/` is git-ignored; a date in the name keeps things sorted: `2026-10-28-meeting`, `2026-10-29-idea-2`. Names are made safe before use: lowercase, ASCII letters, digits, dot, underscore and dash, everything else becomes a dash (`My Memo (2).m4a` becomes `my-memo-2`, and the script prints the name it chose). Accented letters are dropped, so give a name yourself when the file name has them. Keep the originals: `just convert` copies them to `recordings/originals/`, and `just record` writes its full-quality take there.
 
 A recording is never overwritten: `just record` and `just convert` stop when `recordings/<name>.wav` exists and ask for another name. `WHISPER_RECORDINGS_DIR` and `WHISPER_TRANSCRIPTS_DIR` move the two folders elsewhere, for example to an external disk.
 
 If the audio is already a file and you want the text in one step, skip to `just transcribe-file <file>` (section 9).
 
-### Method A: ffmpeg from the terminal (default)
+### Method A: `just record` from the terminal (default)
 
 ```bash
 just record 2026-10-28-notes
-# scripts/record.sh: ffmpeg -f avfoundation -i ":0" -ar 16000 -ac 1 -c:a pcm_s16le recordings/2026-10-28-notes.wav
+# scripts/record.sh:
+#   .build/mic-capture record 0 recordings/originals/2026-10-28-notes.wav
+#   ffmpeg -i recordings/originals/2026-10-28-notes.wav -vn -ar 16000 -ac 1 -c:a pcm_s16le recordings/2026-10-28-notes.wav
 just record check 5          # stops by itself after 5 seconds
 ```
 
-Press `q` in the terminal to stop; Ctrl+C also stops and keeps the file. The script then prints the duration and the mean level, and warns when the take is almost silent. The file is already in the format whisper-cli wants, there is nothing to convert. `MIC_DEVICE=1 just record ...` selects another input, `just record name 300` stops by itself after five minutes.
+Press `q` in the terminal to stop; Ctrl+C also stops and keeps the file. While recording, one line shows the elapsed time and the peak level. `MIC_DEVICE=1 just record ...` selects another input, `just record name 300` stops by itself after five minutes.
 
-Pros: one command, right format, no app to manage. Cons: no level meter while recording, only the check at the end.
+Each take gives two files:
+
+- `recordings/originals/<name>.wav`: the audio exactly as the device delivers it, at its own sample rate and channel count (48 kHz mono for the built-in microphone), 24-bit. This is the file to listen to, edit or share, and the one `just play` plays.
+- `recordings/<name>.wav`: the 16 kHz mono file derived from it, the format whisper-cli reads.
+
+The script then prints the duration and the mean level. It warns when the take is almost silent, when the input clipped, and when audio was lost on the way. To record at a higher sample rate, set the format of the device in Audio MIDI Setup: the recorder follows it.
+
+The recorder is `scripts/mic-capture.swift`, a small Swift program compiled on first use into `.build/`; the compiler comes with the Command Line Tools. ffmpeg is not used to capture: its `avfoundation` input lost about 10% of the audio on the test machine (ffmpeg 9.0.2), in gaps of 512 samples that make the recording choppy.
+
+Disk use: about 8.6 MB per minute for a 48 kHz mono original, plus 1.9 MB per minute for the 16 kHz file.
+
+Pros: one command, full-quality original, level meter, no app to manage. Cons: no trimming.
 
 ### Method B: QuickTime Player
 
@@ -297,7 +312,7 @@ Podcasts, lectures, voice messages exported from a chat app, old `.mp3` files, v
 
 ### Method G: live transcription with whisper-stream
 
-`just live` prints the transcription while you speak: it waits for a pause, then transcribes the last utterance (up to 30 s). It is meant for watching the text appear in real time, for example to check that a term comes out right, not for producing the final file: its segments are decoded without context and without the vocabulary prompt, so they are less accurate than an offline pass. Press Ctrl+C to stop. The session is kept anyway, as `transcripts/live-<date>.txt` and `recordings/live-<date>.wav`, so `just transcribe live-<date>` gives you the proper offline transcript of what you just said. `just` itself prints `error: interrupted by SIGINT` after the two "saved" lines: that is just reporting the Ctrl+C, the files are complete.
+`just live` prints the transcription while you speak: it waits for a pause, then transcribes the last utterance (up to 30 s). It is meant for watching the text appear in real time, for example to check that a term comes out right, not for producing the final file: its segments are decoded without context and without the vocabulary prompt, so they are less accurate than an offline pass. Press Ctrl+C to stop. The session is kept anyway, as `transcripts/live-<date>.txt` and `recordings/live-<date>.wav` (the full-quality take is in `recordings/originals/`), so `just transcribe live-<date>` gives you the proper offline transcript of what you just said. `just` itself prints `error: interrupted by SIGINT` after the two "saved" lines: that is just reporting the Ctrl+C, the files are complete.
 
 ## 9. Transcribe
 
@@ -504,7 +519,7 @@ Transcribe the same audio twice: `just transcribe 2026-10-30-full` for clean tex
 
 **How much memory?** About 2 GB peak for whisper-cli with this model. Anything else can keep running.
 
-**Why 16 kHz mono?** Whisper was trained on 16 kHz audio, so higher sample rates add no accuracy, only size. whisper-cli resamples flac, mp3, ogg and wav by itself but cannot read m4a, mp4 or mov. Converting everything with ffmpeg gives every step the same format.
+**Why 16 kHz mono?** Whisper was trained on 16 kHz audio, so higher sample rates add no accuracy, only size. whisper-cli resamples flac, mp3, ogg and wav by itself but cannot read m4a, mp4 or mov. Converting everything with ffmpeg gives every step the same format. The 16 kHz file sounds duller than the source: to listen, use the file in `recordings/originals/`, which `just play` picks by itself.
 
 **What is VAD and should I keep it on?** Voice activity detection: the Silero model marks where speech is, and whisper transcribes only those spans. It removes hallucinated text in silences and speeds things up. Keep it on. If a file loses the first word of sentences, raise `--vad-speech-pad-ms`.
 
@@ -512,7 +527,7 @@ Transcribe the same audio twice: `just transcribe 2026-10-30-full` for clean tex
 
 **The filler count is zero but I know I say "um" a lot.** Whisper removes hesitations by default. Transcribe that file with `just transcribe-verbatim`, which puts the language's fillers in the prompt and makes the model keep them; then `just stats` counts them. Expect approximate spellings: the list in `config/lang/<language>/fillers.txt` has the common ones, add yours.
 
-**Where is the m4a I converted?** In `recordings/originals/`, copied by `just convert`; git-ignored like the rest of `recordings/`.
+**Where is the m4a I converted?** In `recordings/originals/`, copied by `just convert`; git-ignored like the rest of `recordings/`. The full-quality takes of `just record` and `just live` are there too.
 
 **Names and foreign words are wrong.** Put them in your prompt (`just prompt`, then edit `config/lang/<language>/prompt.txt`) inside a short sentence in the recording's language. The prompt biases the first window strongly and later ones less; `--carry-initial-prompt` repeats it for every window if a term is still wrong late in the file.
 
@@ -536,7 +551,7 @@ Transcribe the same audio twice: `just transcribe 2026-10-30-full` for clean tex
 
 **Do I need bash as my shell?** No. Keep `zsh`, or use `bash`: `just` runs every recipe in bash, and each script starts bash through its shebang. Running a script directly, `scripts/transcribe.sh take1`, works from zsh, bash, fish or anything else. The only thing that does not work is forcing another interpreter, `zsh scripts/transcribe.sh`, and the script says so.
 
-**Does it run on an Intel Mac or on Linux?** Not as is. The transcription pipeline is portable bash, but recording and device listing use ffmpeg's macOS-only `avfoundation` input, the smoke test uses `say`, dependencies come from Homebrew, and the build expects Metal. The scripts stop with a clear message on another platform.
+**Does it run on an Intel Mac or on Linux?** Not as is. The transcription pipeline is portable bash, but recording and device listing use a Swift program built on the macOS AVFoundation framework, the smoke test uses `say`, dependencies come from Homebrew, and the build expects Metal. The scripts stop with a clear message on another platform.
 
 **Why uv, and why `-I`?** uv pins and installs the interpreter (`.python-version`), creates `.venv`, and runs scripts with it, so the result does not depend on whichever `python3` Homebrew or macOS put on the PATH. `-I` is Python's isolated mode: it ignores the current directory and user site-packages, so a stray `json.py` next to a downloaded file cannot be imported by accident. The scripts use the standard library only.
 
@@ -559,11 +574,11 @@ just test                                    # synthesized sentence in WHISPER_L
 
 # audio in (recordings/<name>.wav, 16 kHz mono)
 just devices                                 # [0] MacBook Pro Microphone
-just record 2026-10-28-notes                 # q to stop
+just record 2026-10-28-notes                 # q to stop; full quality in recordings/originals/
 just record check 5                          # 5 seconds, stops alone
 MIC_DEVICE=1 just record take                # another input
 just convert file.m4a name                   # QuickTime, Voice Memos, Meet, Zoom, mov, mp4, mp3
-just play name
+just play name                               # the full-quality original when there is one
 
 # transcribe (transcripts/<name>.{txt,srt,json,log})
 just transcribe name                         # language, VAD, vocabulary prompt
@@ -599,9 +614,11 @@ vendor/whisper.cpp/build/bin/whisper-cli -m models/ggml-large-v3-turbo.bin \
   -f recordings/name.wav -l en -t 8 --vad -vm models/ggml-silero-v6.2.0.bin -vp 500 \
   -otxt -osrt -ojf -of transcripts/name --prompt "$(cat config/lang/en/prompt.txt)"
 
+# raw recorder (built by the first `just record` or `just devices`)
+.build/mic-capture devices                                            # inputs
+.build/mic-capture record 0 out.wav [seconds]                         # record at the device's rate, 24-bit
+
 # raw ffmpeg
-ffmpeg -f avfoundation -list_devices true -i ""                       # inputs
-ffmpeg -f avfoundation -i ":0" -ar 16000 -ac 1 -c:a pcm_s16le out.wav  # record
 ffmpeg -i in.m4a -vn -ar 16000 -ac 1 -c:a pcm_s16le out.wav           # convert
 ffmpeg -i out.wav -af volumedetect -f null - 2>&1 | grep volume        # levels
 

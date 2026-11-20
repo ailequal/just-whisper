@@ -14,7 +14,7 @@ The wrapper handles the steps whisper.cpp leaves to you:
 
 What you do with the transcript afterwards (notes, meeting minutes, subtitles, an LLM prompt) is outside this tool.
 
-Version 1.0.0 ([CHANGELOG.md](CHANGELOG.md)). Developed, measured and tested on a MacBook Pro M4 Pro with 24 GB of RAM running macOS 26. [GUIDE.md](GUIDE.md) explains every step, the settings, the common problems and their fixes.
+Version 1.1.0 ([CHANGELOG.md](CHANGELOG.md)). Developed, measured and tested on a MacBook Pro M4 Pro with 24 GB of RAM running macOS 26. [GUIDE.md](GUIDE.md) explains every step, the settings, the common problems and their fixes.
 
 > **AI usage disclosure**: This codebase was written with LLM-based tools. It is reviewed and tested, but bugs and odd patterns are possible. Review before relying on it in production.
 
@@ -66,7 +66,7 @@ Required:
 - **Disk and memory.** About 2.3 GB for the model plus the whisper.cpp build, and 2.9 GB more for the optional `large-v3` used by `just recheck`. About 2 GB of RAM while transcribing.
 - **Internet during setup only**, for Homebrew, the whisper.cpp submodule and the 1.5 GiB model. Recording, transcription and export are offline.
 - **A native arm64 terminal** with `zsh` or `bash`, not one running under Rosetta. GUIDE.md, section 3, covers the shell, the PATH and Rosetta.
-- **Xcode Command Line Tools**: compiler, `git`, Metal. Install with `xcode-select --install`.
+- **Xcode Command Line Tools**: the C++ compiler for whisper.cpp, the Swift compiler for the microphone recorder, `git`, Metal. Install with `xcode-select --install`.
 - **Homebrew** at `/opt/homebrew`: https://brew.sh. Nothing here installs it, and `just deps` stops without it.
 - **just** 1.27 or later, **uv**, **cmake** and **ffmpeg**. `scripts/deps.sh install` installs the missing ones with Homebrew.
 - **Python 3.15**, pinned in `.python-version` and installed by uv (`just python`). Every Python command goes through `uv run`; never call `python3` directly. The scripts use the standard library only.
@@ -100,13 +100,13 @@ just pin                # record the checked-out whisper.cpp commit as the pin, 
 just build              # cmake Release build with Metal, plus whisper-stream when sdl2 is present
 just rebuild            # same, after deleting the build directory
 just models             # download ggml-large-v3-turbo.bin and the Silero VAD model into models/, verify the SHA-1
-just check              # versions (uv, Python, cmake, ffmpeg, node), binaries, models, language, prompt, microphones
+just check              # versions (uv, Python, cmake, ffmpeg, swiftc, node), binaries, models, language, prompt, microphones
 just prompt             # create config/lang/<lang>/prompt.txt, your vocabulary prompt, from the example
 
-just devices            # audio inputs seen by ffmpeg (index = MIC_DEVICE)
-just record [name] [s]  # record the mic to recordings/<name>.wav, 16 kHz mono; q stops, or after s seconds
+just devices            # audio inputs (index = MIC_DEVICE)
+just record [name] [s]  # record the mic at full quality to recordings/originals/<name>.wav, plus recordings/<name>.wav at 16 kHz mono; q stops, or after s seconds
 just convert file [name]# any audio/video file to recordings/<name>.wav; stops if that recording exists
-just play name          # play a recording
+just play name          # play a recording, the full-quality original when there is one
 
 just transcribe name [flags]  # whisper-cli with the language, VAD and vocabulary prompt; extra flags pass through
 just transcribe-verbatim name # same, with the language's fillers in the prompt so hesitations (um, uh) are kept
@@ -172,6 +172,7 @@ WHISPER_REF=master just upgrade   # follow master on purpose
 - `justfile`: the commands above; each one calls a script.
 - `scripts/`: one bash script per command (`transcribe.sh`, `checkout.sh`, `check.sh`, ...) and `scripts/lib/common.sh` with the settings, derived paths and helpers they share. Written for bash 3.2 as well, so they run with the macOS `/bin/bash`; `just lint` checks them.
 - `config/lang/<code>/`: one directory per language (`en`, `it` shipped): `fillers.txt` (counted by `just stats`, injected by `just transcribe-verbatim`), `smoke-test.txt` (sentence and expected word for `just test`), `prompt.example.txt` (generic vocabulary prompt, tracked) and your `prompt.txt` (git-ignored, created by `just prompt`). See `config/lang/README.md`.
+- `scripts/mic-capture.swift`: the microphone recorder behind `just record`, `just live` and `just devices`. It writes what the device delivers (its sample rate and channels, 24-bit) and reports clipped input and lost audio. Compiled on first use into `.build/`, git-ignored.
 - `scripts/transcript-stats.py`: duration, speaking time, pace, pauses, filler words and low-confidence segments from the JSON transcript. `scripts/stats.sh` runs it with `uv run python -I`.
 - `scripts/transcript-timestamps.py`: the JSON transcript as `[mm:ss] text` lines, with `[?]` on low-confidence segments; `scripts/export.sh` embeds that in the Markdown export.
 - `scripts/transcript-index.py`: the table in `transcripts/INDEX.md`, written by `just export-all`.
@@ -179,7 +180,7 @@ WHISPER_REF=master just upgrade   # follow master on purpose
 - `CLAUDE.md`: conventions for Claude Code when it works in this repository.
 - `pyproject.toml`, `.python-version`, `uv.lock`: the uv project. Python 3.15, no dependencies. `uv sync` creates `.venv/`, git-ignored.
 - `.nvmrc`: Node.js 26, for the Prettier recipes only.
-- `recordings/`: WAV files at 16 kHz mono, git-ignored. `just convert` also copies the source file into `recordings/originals/`.
+- `recordings/`: WAV files at 16 kHz mono, git-ignored. `recordings/originals/` holds the full-quality takes of `just record` and `just live`, and the source files copied by `just convert`.
 - `transcripts/`: `.txt`, `.srt`, `.json` (full, with token probabilities), `.log`, `.md`, `.timestamps.txt` and, after `just recheck`, `.recheck.md` per recording, plus `INDEX.md`, git-ignored. The log starts with the whisper.cpp version, model, prompt and flags that produced the transcript.
 - `CHANGELOG.md`: what changed in each version, Keep a Changelog format.
 - `LICENSE`: MIT. whisper.cpp, vendored as a submodule, is MIT as well.
