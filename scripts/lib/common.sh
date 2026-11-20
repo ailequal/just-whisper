@@ -4,7 +4,7 @@
 #
 # Every setting is an environment variable with a default; override it in the shell:
 #   WHISPER_DIR=../whisper.cpp scripts/build.sh
-#   MIC_DEVICE=1 scripts/record.sh take1
+#   MIC_DEVICE="USB Microphone" scripts/record.sh take1
 # The justfile passes nothing extra: `just transcribe x` and `scripts/transcribe.sh x` are the same.
 #
 # whisper.cpp is the git submodule vendor/whisper.cpp. The commit recorded for the submodule is the pin:
@@ -41,13 +41,13 @@ whisper_submodule="vendor/whisper.cpp"           # where the submodule is record
 : "${WHISPER_VERBATIM:=0}"                      # 1: surround the prompt with the language's fillers so whisper keeps them
 : "${LOW_CONFIDENCE:=0.6}"                      # segments with a mean token probability below this are marked in stats and export
 : "${RECHECK_MODEL:=large-v3}"                  # full model used by `just recheck` on the low-confidence segments
-: "${MIC_DEVICE:=0}"                            # audio input index, as listed by `just devices`
+: "${MIC_DEVICE:=}"                             # audio input: empty follows the macOS default input; or an index or a name from `just devices`
 : "${COREML_PYTHON:=3.13}"                      # newest Python supported by coremltools
 : "${STATS_TARGET_WPM:=}"                       # optional target pace in words per minute for `just stats`; empty: no comparison
 
 # --- derived paths ------------------------------------------------------------
 recordings_dir="$WHISPER_RECORDINGS_DIR"
-originals_dir="$recordings_dir/originals"        # full-quality microphone takes and the sources of `just convert`
+originals_dir="$recordings_dir/originals"        # full-quality microphone takes (FLAC) and the sources of `just convert`
 transcripts_dir="$WHISPER_TRANSCRIPTS_DIR"
 stats_script="scripts/transcript-stats.py"
 mic_capture_src="scripts/mic-capture.swift"      # the microphone recorder, compiled on first use
@@ -94,6 +94,9 @@ need_mic_capture() {
   swiftc -O -o "$mic_capture_bin" "$mic_capture_src" || die "cannot build $mic_capture_src: check the Xcode Command Line Tools with \`just deps check\`"
 }
 
+# What the recorder is asked to record from: MIC_DEVICE, or the macOS default input when it is empty.
+mic_device() { printf '%s\n' "${MIC_DEVICE:-default}"; }
+
 # The recording, playback and text-to-speech steps use macOS frameworks and tools.
 need_macos() { [ "$(uname -s)" = Darwin ] || die "$1 needs macOS (avfoundation, say): this project targets Apple Silicon Macs"; }
 # True when the process runs natively on Apple Silicon (not Intel, not under Rosetta).
@@ -119,6 +122,30 @@ audio_seconds() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$1
 
 # Sample rate and channel count of an audio file, for example "48000 Hz, 1 ch".
 audio_format() { ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate,channels -of csv=p=0 "$1" | awk -F, '{ printf "%s Hz, %s ch", $1, $2 }'; }
+
+# MD5 of the decoded samples of an audio file: two files with the same value hold the same audio.
+audio_md5() { ffmpeg -hide_banner -loglevel error -i "$1" -map 0:a:0 -c:a pcm_s32le -f md5 - 2>/dev/null; }
+
+# Replace the full-quality WAV take "$1" with a FLAC next to it and print the path of the file that is kept.
+# FLAC is lossless and about half the size. The WAV is removed only after the FLAC decodes to exactly the
+# same samples; on any failure the WAV stays and is the file kept.
+flac_original() {
+  local wav="$1" flac="${1%.wav}.flac" part="${1%.wav}.part.flac" want got
+  if [ ! -e "$flac" ] \
+    && ffmpeg -hide_banner -loglevel error -y -i "$wav" -map 0:a:0 -c:a flac -compression_level 8 "$part" 2>/dev/null \
+    && want="$(audio_md5 "$wav")" && got="$(audio_md5 "$part")" \
+    && [ -n "$want" ] && [ "$want" = "$got" ] \
+    && mv "$part" "$flac" && rm -f "$wav"; then
+    printf '%s\n' "$flac"
+  else
+    [ ! -f "$part" ] || rm -f "$part"
+    echo "warning: $wav was not compressed to FLAC, the WAV is kept" >&2
+    printf '%s\n' "$wav"
+  fi
+}
+
+# Size of a file for a person, for example 4.8M.
+file_size() { du -h "$1" | cut -f1 | tr -d ' '; }
 
 # Convert any audio or video file to the 16 kHz mono 16-bit WAV that whisper-cli reads.
 to_wav16k() { ffmpeg -hide_banner -loglevel error -y -i "$1" -vn -ar 16000 -ac 1 -c:a pcm_s16le "$2"; }

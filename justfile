@@ -95,12 +95,12 @@ prompt:
 # Record
 # ---------------------------------------------------------------------------
 
-[doc('List the audio input devices (index = MIC_DEVICE)')]
+[doc('List the audio input devices, the macOS default one marked; MIC_DEVICE picks another by index or name')]
 [group('record')]
 devices:
     scripts/devices.sh
 
-[doc('Record the microphone at full quality to recordings/originals/<name>.wav, plus recordings/<name>.wav at 16 kHz mono; q stops, or give a duration: just record [name] [seconds]')]
+[doc('Record the microphone at full quality to recordings/originals/<name>.flac, plus recordings/<name>.wav at 16 kHz mono; p pauses, q stops, or give a duration: just record [name] [seconds]')]
 [group('record')]
 record name="" seconds="":
     scripts/record.sh "$@"

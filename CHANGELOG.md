@@ -4,6 +4,18 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Pause and resume while recording, with `p` or the space bar (`just record`).
+- Input selection by name in `MIC_DEVICE`.
+- macOS default input marked in `just devices`.
+
+### Changed
+
+- `just record` and `just live` record the macOS default input when `MIC_DEVICE` is not set; the default was index `0`.
+- Full-quality takes are kept as lossless FLAC in `recordings/originals/<name>.flac`, in place of WAV.
+- `just live` gives `whisper-stream` the same input as the recorder.
+
 ## [1.1.0] - 2026-11-20
 
 ### Added

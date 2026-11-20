@@ -1,16 +1,22 @@
 // Microphone recorder for scripts/record.sh, scripts/live.sh and scripts/devices.sh.
 //
-//   mic-capture devices                           one "[index] name" line per audio input
-//   mic-capture record <index> <out.wav> [seconds]
+//   mic-capture devices                             one "[index] name" line per audio input, the default marked
+//   mic-capture resolve <device>                    the name of the input a device argument selects
+//   mic-capture record <device> <out.wav> [seconds]
+//
+// <device> is "default" (the input chosen in System Settings, Sound), an index from the list, or a name:
+// the whole name in any letter case, or a part of it that matches one input only.
 //
 // It records what the device delivers, at its own sample rate and channel count, as a 24-bit WAV.
 // ffmpeg's avfoundation input is not used for capture: it loses about one audio buffer in ten.
 // Every buffer is checked against the timestamp of the previous one, so lost audio is reported.
-// Stop with q (when started from a terminal), Ctrl+C, SIGTERM, or after the given seconds.
+// Started from a terminal: p or space pauses and resumes, q stops. Ctrl+C, SIGTERM and the end of the
+// given seconds stop too. The seconds count recorded audio, so a pause does not shorten the take.
 // Built by need_mic_capture in scripts/lib/common.sh: swiftc -O -o .build/mic-capture scripts/mic-capture.swift
 
 import AVFoundation
 import Accelerate
+import CoreAudio
 import Foundation
 
 var savedTerminal: termios?
@@ -43,6 +49,45 @@ func inputDevices() -> [AVCaptureDevice] {
   return AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .audio, position: .unspecified).devices
 }
 
+// The input selected in System Settings, Sound, asked to Core Audio: its UID is the uniqueID of the capture device.
+func defaultInputDevice() -> AVCaptureDevice? {
+  var deviceID = AudioDeviceID(0)
+  var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+  var address = AudioObjectPropertyAddress(
+    mSelector: kAudioHardwarePropertyDefaultInputDevice,
+    mScope: kAudioObjectPropertyScopeGlobal,
+    mElement: kAudioObjectPropertyElementMain)
+  if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID) == noErr {
+    var uid: Unmanaged<CFString>?
+    size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    address.mSelector = kAudioDevicePropertyDeviceUID
+    if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &uid) == noErr, let value = uid,
+      let device = AVCaptureDevice(uniqueID: value.takeRetainedValue() as String)
+    {
+      return device
+    }
+  }
+  return AVCaptureDevice.default(for: .audio)
+}
+
+func resolveDevice(_ wanted: String) -> AVCaptureDevice {
+  if wanted.isEmpty || wanted == "default" {
+    guard let device = defaultInputDevice() else { fail("no audio input found: connect a microphone, or check System Settings, Sound, Input") }
+    return device
+  }
+  let devices = inputDevices()
+  if let index = Int(wanted) {
+    guard devices.indices.contains(index) else { fail("no audio input with index \(index): see `just devices`") }
+    return devices[index]
+  }
+  let name = wanted.lowercased()
+  if let exact = devices.first(where: { $0.localizedName.lowercased() == name }) { return exact }
+  let partial = devices.filter { $0.localizedName.lowercased().contains(name) }
+  if partial.count == 1 { return partial[0] }
+  if partial.isEmpty { fail("no audio input named '\(wanted)': see `just devices`") }
+  fail("'\(wanted)' matches \(partial.count) audio inputs (\(partial.map { $0.localizedName }.joined(separator: ", "))): give the whole name or the index")
+}
+
 func requireMicrophoneAccess() {
   let denied = "the microphone is not permitted for this terminal app: System Settings, Privacy & Security, Microphone"
   switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -68,6 +113,7 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
 
   var file: AVAudioFile?
   var rate = 0.0
+  var buffersSeen = 0
   var frames: AVAudioFramePosition = 0
   var frameLimit: AVAudioFramePosition?
   var expectedTime: Double?
@@ -75,6 +121,9 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
   var lostSeconds = 0.0
   var peak: Float = 0
   var clippedBuffers = 0
+  var paused = false
+  var fadeOutPending = false
+  var fadeInPending = false
   var finished = false
   var sources: [DispatchSourceProtocol] = []
 
@@ -122,12 +171,12 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
       sources.append(timer)
     }
     queue.asyncAfter(deadline: .now() + 5) { [unowned self] in
-      if self.frames == 0 { fail("no audio from \(self.deviceName) after 5 seconds") }
+      if self.buffersSeen == 0 { fail("no audio from \(self.deviceName) after 5 seconds") }
     }
     session.startRunning()
   }
 
-  // q stops the recording: read single keys, without echo, while this process owns the terminal.
+  // p or space pauses and resumes, q stops: read single keys, without echo, while this process owns the terminal.
   func watchKeyboard() {
     var settings = termios()
     guard tcgetattr(STDIN_FILENO, &settings) == 0 else { return }
@@ -137,16 +186,52 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     Thread.detachNewThread { [unowned self] in
       var key: UInt8 = 0
       while read(STDIN_FILENO, &key, 1) == 1 {
-        if key == UInt8(ascii: "q") || key == UInt8(ascii: "Q") {
+        switch key {
+        case UInt8(ascii: "q"), UInt8(ascii: "Q"):
           self.queue.async { self.finish() }
           return
+        case UInt8(ascii: "p"), UInt8(ascii: "P"), UInt8(ascii: " "):
+          self.queue.async { self.togglePause() }
+        default:
+          break
         }
+      }
+    }
+  }
+
+  // The microphone stays open during a pause and its audio is discarded, so resuming is immediate.
+  // The last buffer before a pause fades out and the first one after it fades in: a cut without a click.
+  func togglePause() {
+    if finished { return }
+    if paused {
+      paused = false
+      fadeInPending = true
+      expectedTime = nil
+    } else {
+      fadeOutPending = !fadeOutPending
+    }
+  }
+
+  // Multiply the buffer by a straight ramp, from silence to full level or the other way round.
+  func fade(_ buffer: AVAudioPCMBuffer, rising: Bool) {
+    for part in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
+      guard let data = part.mData else { continue }
+      let channels = max(1, Int(part.mNumberChannels))
+      let samples = data.assumingMemoryBound(to: Float.self)
+      let count = Int(part.mDataByteSize) / MemoryLayout<Float>.size / channels
+      guard count > 0 else { continue }
+      for frame in 0..<count {
+        let position = Float(frame) / Float(count)
+        let gain = rising ? position : 1 - position - 1 / Float(count)
+        for channel in 0..<channels { samples[frame * channels + channel] *= max(0, gain) }
       }
     }
   }
 
   func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
     if finished { return }
+    buffersSeen += 1
+    if paused { return }
     let count = CMSampleBufferGetNumSamples(sampleBuffer)
     guard count > 0, let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
 
@@ -169,7 +254,7 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
       rate = format.sampleRate
       if let seconds = seconds { frameLimit = AVAudioFramePosition((seconds * rate).rounded()) }
       let channels = format.channelCount == 1 ? "mono" : "\(format.channelCount) channels"
-      say("input: \(deviceName), \(Int(rate)) Hz, \(channels), written as 24-bit WAV\n")
+      say("input: \(deviceName), \(Int(rate)) Hz, \(channels), 24-bit\n")
     }
     guard let file = file, let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(count)) else { return }
     buffer.frameLength = AVAudioFrameCount(count)
@@ -196,6 +281,15 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
       peak = max(peak, loudest)
       if loudest >= 0.999 { clippedBuffers += 1 }
     }
+    if fadeInPending {
+      fade(buffer, rising: true)
+      fadeInPending = false
+    }
+    if fadeOutPending {
+      fade(buffer, rising: false)
+      fadeOutPending = false
+      paused = true
+    }
     do { try file.write(from: buffer) } catch { fail("cannot write \(url.path): \(error.localizedDescription)") }
     frames += AVAudioFramePosition(buffer.frameLength)
     if let limit = frameLimit, frames >= limit { finish() }
@@ -205,12 +299,17 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
   func showStatus() {
     guard rate > 0, !finished else { return }
     let elapsed = Int(Double(frames) / rate)
+    let clock = String(format: "%02d:%02d", elapsed / 60, elapsed % 60)
+    if paused {
+      say("\r  \(clock)  paused: p resumes, q stops\u{1B}[K")
+      peak = 0
+      return
+    }
     let level = peak > 0 ? 20 * log10(Double(peak)) : -120
     let filled = max(0, min(20, Int((level + 60) / 3)))
     let bar = String(repeating: "#", count: filled) + String(repeating: "-", count: 20 - filled)
-    let clock = String(format: "%02d:%02d", elapsed / 60, elapsed % 60)
     let value = String(format: "%6.1f dB", level)
-    say("\r  \(clock)  [\(bar)] peak \(value)\(peak >= 0.999 ? "  CLIPPING" : "          ")")
+    say("\r  \(clock)  [\(bar)] peak \(value)\(peak >= 0.999 ? "  CLIPPING" : "")\u{1B}[K")
     peak = 0
   }
 
@@ -232,26 +331,29 @@ final class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-let usage = "usage: mic-capture devices | mic-capture record <index> <out.wav> [seconds]"
+let usage = "usage: mic-capture devices | mic-capture resolve <device> | mic-capture record <device> <out.wav> [seconds]"
 
 switch arguments.first {
 case "devices":
+  let preferred = defaultInputDevice()?.uniqueID
   for (index, device) in inputDevices().enumerated() {
-    print("[\(index)] \(device.localizedName)")
+    print("[\(index)] \(device.localizedName)\(device.uniqueID == preferred ? " (default)" : "")")
   }
+case "resolve":
+  guard arguments.count == 2 else { fail(usage) }
+  print(resolveDevice(arguments[1]).localizedName)
 case "record":
-  guard arguments.count == 3 || arguments.count == 4, let index = Int(arguments[1]) else { fail(usage) }
+  guard arguments.count == 3 || arguments.count == 4 else { fail(usage) }
   var seconds: Double?
   if arguments.count == 4 {
     guard let value = Double(arguments[3]), value > 0 else { fail("the duration must be a number of seconds, got '\(arguments[3])'") }
     seconds = value
   }
-  let devices = inputDevices()
-  guard devices.indices.contains(index) else { fail("no audio input with index \(index): see `just devices`") }
+  let device = resolveDevice(arguments[1])
   requireMicrophoneAccess()
   // Keys and the status line only when a person is at the terminal, not when started in the background.
   let interactive = isatty(STDIN_FILENO) != 0 && isatty(STDERR_FILENO) != 0 && tcgetpgrp(STDIN_FILENO) == getpgrp()
-  let recorder = Recorder(device: devices[index], url: URL(fileURLWithPath: arguments[2]), seconds: seconds, interactive: interactive)
+  let recorder = Recorder(device: device, url: URL(fileURLWithPath: arguments[2]), seconds: seconds, interactive: interactive)
   recorder.start()
   dispatchMain()
 default:

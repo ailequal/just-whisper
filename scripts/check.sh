@@ -71,6 +71,6 @@ case "$prompt_src" in
   *) row prompt "$prompt_src" ;;
 esac
 
-echo "microphones (use the index as MIC_DEVICE):"
+echo "microphones (the default one is recorded; MIC_DEVICE picks another by index or name):"
 scripts/devices.sh | sed 's/^/  /' || echo "  not listed: the microphone recorder could not be built"
 exit "$status"

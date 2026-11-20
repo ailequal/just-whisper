@@ -218,12 +218,12 @@ Other models you may want (`WHISPER_MODEL=<name> just models`): `large-v3-turbo-
 Only for recording with the Mac; skip it if your audio comes from files.
 
 1. **Microphone permission for the terminal.** The first time the recorder (or whisper-stream) opens the microphone, macOS asks for permission for the app that launched it: Terminal, iTerm, Ghostty, VS Code. If you ever denied it, enable it in System Settings, Privacy & Security, Microphone. A denied app is refused with a message, or records silence with no error.
-2. **Pick the input.** System Settings, Sound, Input: choose the device and watch the level meter while speaking normally. Aim for the meter to move to about two thirds; lower the input volume if it hits the end.
-3. **List the inputs.** The index on the left is what `MIC_DEVICE` expects (default `0`).
+2. **Pick the input.** System Settings, Sound, Input: choose the device and watch the level meter while speaking normally. `just record` and `just live` use the input selected there. Aim for the meter to move to about two thirds; lower the input volume if it hits the end.
+3. **List the inputs.** The one marked `(default)` is the input selected in System Settings. To use another without changing that setting, give `MIC_DEVICE` its index or its name; a part of the name is enough when it matches one input only.
 
    ```bash
    just devices
-   #   [0] MacBook Pro Microphone
+   #   [0] MacBook Pro Microphone (default)
    ```
 
 4. **Five second check.** Record, then read the level line that `just record` prints after every take: a mean between -35 and -20 dB is normal speech; below -50 dB the script warns, which means the microphone is muted, too far, or not permitted.
@@ -231,7 +231,7 @@ Only for recording with the Mac; skip it if your audio comes from files.
    ```bash
    just record check 5
    # saved recordings/check.wav (5s, 16 kHz mono for whisper)
-   # full quality: recordings/originals/check.wav (48000 Hz, 1 ch)
+   # full quality: recordings/originals/check.flac (48000 Hz, 1 ch, 348K)
    # level: -27.4 dB mean (speech is usually between -35 and -20 dB)
    just play check          # plays the full-quality take
    ```
@@ -256,23 +256,28 @@ If the audio is already a file and you want the text in one step, skip to `just 
 ```bash
 just record 2026-10-28-notes
 # scripts/record.sh:
-#   .build/mic-capture record 0 recordings/originals/2026-10-28-notes.wav
+#   .build/mic-capture record default recordings/originals/2026-10-28-notes.wav
 #   ffmpeg -i recordings/originals/2026-10-28-notes.wav -vn -ar 16000 -ac 1 -c:a pcm_s16le recordings/2026-10-28-notes.wav
+#   ffmpeg -i recordings/originals/2026-10-28-notes.wav -c:a flac recordings/originals/2026-10-28-notes.flac, then the WAV take is removed
 just record check 5          # stops by itself after 5 seconds
 ```
 
-Press `q` in the terminal to stop; Ctrl+C also stops and keeps the file. While recording, one line shows the elapsed time and the peak level. `MIC_DEVICE=1 just record ...` selects another input, `just record name 300` stops by itself after five minutes.
+Press `q` in the terminal to stop; Ctrl+C also stops and keeps the take. While recording, one line shows the elapsed time and the peak level.
+
+`p` or the space bar pauses, and the same key resumes. Nothing is recorded during a pause, and the take continues in the same file with a short fade at the cut. The microphone stays open while paused, so the orange indicator in the menu bar stays on. `just record name 300` stops by itself after five minutes of recorded audio: a pause does not shorten the take.
+
+The input is the one selected in System Settings, Sound, Input. `MIC_DEVICE=1 just record ...` or `MIC_DEVICE="USB Microphone" just record ...` selects another, by index or by name.
 
 Each take gives two files:
 
-- `recordings/originals/<name>.wav`: the audio exactly as the device delivers it, at its own sample rate and channel count (48 kHz mono for the built-in microphone), 24-bit. This is the file to listen to, edit or share, and the one `just play` plays.
+- `recordings/originals/<name>.flac`: the audio exactly as the device delivers it, at its own sample rate and channel count (48 kHz mono for the built-in microphone), 24-bit. FLAC is lossless: the file decodes to the same samples as the WAV the recorder wrote, and that WAV is removed only after this is checked. This is the file to listen to, edit or share, and the one `just play` plays.
 - `recordings/<name>.wav`: the 16 kHz mono file derived from it, the format whisper-cli reads.
 
 The script then prints the duration and the mean level. It warns when the take is almost silent, when the input clipped, and when audio was lost on the way. To record at a higher sample rate, set the format of the device in Audio MIDI Setup: the recorder follows it.
 
 The recorder is `scripts/mic-capture.swift`, a small Swift program compiled on first use into `.build/`; the compiler comes with the Command Line Tools. ffmpeg is not used to capture: its `avfoundation` input lost about 10% of the audio on the test machine (ffmpeg 9.0.2), in gaps of 512 samples that make the recording choppy.
 
-Disk use: about 8.6 MB per minute for a 48 kHz mono original, plus 1.9 MB per minute for the 16 kHz file.
+Disk use: about 4 to 5 MB per minute for a 48 kHz mono original (55% of the 8.6 MB of the WAV on a speech take), plus 1.9 MB per minute for the 16 kHz file.
 
 Pros: one command, full-quality original, level meter, no app to manage. Cons: no trimming.
 
@@ -312,7 +317,7 @@ Podcasts, lectures, voice messages exported from a chat app, old `.mp3` files, v
 
 ### Method G: live transcription with whisper-stream
 
-`just live` prints the transcription while you speak: it waits for a pause, then transcribes the last utterance (up to 30 s). It is meant for watching the text appear in real time, for example to check that a term comes out right, not for producing the final file: its segments are decoded without context and without the vocabulary prompt, so they are less accurate than an offline pass. Press Ctrl+C to stop. The session is kept anyway, as `transcripts/live-<date>.txt` and `recordings/live-<date>.wav` (the full-quality take is in `recordings/originals/`), so `just transcribe live-<date>` gives you the proper offline transcript of what you just said. `just` itself prints `error: interrupted by SIGINT` after the two "saved" lines: that is just reporting the Ctrl+C, the files are complete.
+`just live` prints the transcription while you speak: it waits for a pause, then transcribes the last utterance (up to 30 s). It is meant for watching the text appear in real time, for example to check that a term comes out right, not for producing the final file: its segments are decoded without context and without the vocabulary prompt, so they are less accurate than an offline pass. It listens to the same input as `just record`: the macOS default one, or `MIC_DEVICE`. Press Ctrl+C to stop. The session is kept anyway, as `transcripts/live-<date>.txt` and `recordings/live-<date>.wav` (the full-quality take is in `recordings/originals/`), so `just transcribe live-<date>` gives you the proper offline transcript of what you just said. `just` itself prints `error: interrupted by SIGINT` after the two "saved" lines: that is just reporting the Ctrl+C, the files are complete.
 
 ## 9. Transcribe
 
@@ -573,10 +578,11 @@ just prompt                                  # create config/lang/en/prompt.txt,
 just test                                    # synthesized sentence in WHISPER_LANG through convert, transcribe, stats, export
 
 # audio in (recordings/<name>.wav, 16 kHz mono)
-just devices                                 # [0] MacBook Pro Microphone
-just record 2026-10-28-notes                 # q to stop; full quality in recordings/originals/
+just devices                                 # [0] MacBook Pro Microphone (default)
+just record 2026-10-28-notes                 # p pauses, q stops; full quality in recordings/originals/ (FLAC)
 just record check 5                          # 5 seconds, stops alone
-MIC_DEVICE=1 just record take                # another input
+MIC_DEVICE=1 just record take                # another input than the macOS default, by index
+MIC_DEVICE="USB Microphone" just record take # or by name
 just convert file.m4a name                   # QuickTime, Voice Memos, Meet, Zoom, mov, mp4, mp3
 just play name                               # the full-quality original when there is one
 
@@ -616,7 +622,7 @@ vendor/whisper.cpp/build/bin/whisper-cli -m models/ggml-large-v3-turbo.bin \
 
 # raw recorder (built by the first `just record` or `just devices`)
 .build/mic-capture devices                                            # inputs
-.build/mic-capture record 0 out.wav [seconds]                         # record at the device's rate, 24-bit
+.build/mic-capture record default out.wav [seconds]                   # record at the device's rate, 24-bit; an index or a name in place of default
 
 # raw ffmpeg
 ffmpeg -i in.m4a -vn -ar 16000 -ac 1 -c:a pcm_s16le out.wav           # convert

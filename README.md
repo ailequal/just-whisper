@@ -39,7 +39,7 @@ just transcribe-file ~/Downloads/memo.m4a   # transcripts/memo.txt, plus .srt, .
 To record from the microphone instead:
 
 ```bash
-just record take1             # speak, press q to stop: recordings/take1.wav (macOS asks for the microphone permission the first time)
+just record take1             # speak, p pauses, q stops: recordings/take1.wav (macOS asks for the microphone permission the first time)
 just transcribe take1         # transcripts/take1.{txt,srt,json,log}
 just export take1             # transcripts/take1.md: settings, statistics, text with [mm:ss] timestamps
 ```
@@ -103,8 +103,8 @@ just models             # download ggml-large-v3-turbo.bin and the Silero VAD mo
 just check              # versions (uv, Python, cmake, ffmpeg, swiftc, node), binaries, models, language, prompt, microphones
 just prompt             # create config/lang/<lang>/prompt.txt, your vocabulary prompt, from the example
 
-just devices            # audio inputs (index = MIC_DEVICE)
-just record [name] [s]  # record the mic at full quality to recordings/originals/<name>.wav, plus recordings/<name>.wav at 16 kHz mono; q stops, or after s seconds
+just devices            # audio inputs, the macOS default one marked; MIC_DEVICE picks another by index or name
+just record [name] [s]  # record the mic at full quality to recordings/originals/<name>.flac, plus recordings/<name>.wav at 16 kHz mono; p pauses, q stops, or after s seconds
 just convert file [name]# any audio/video file to recordings/<name>.wav; stops if that recording exists
 just play name          # play a recording, the full-quality original when there is one
 
@@ -131,25 +131,25 @@ just clean              # remove transcripts (recordings are kept, asks first)
 
 Settings are environment variables with their defaults in `scripts/lib/common.sh`. They apply to `just` and to the scripts alike: `WHISPER_LANG=it just transcribe meeting`.
 
-| Setting                   | Default              | Meaning                                                                               |
-| ------------------------- | -------------------- | ------------------------------------------------------------------------------------- |
-| `WHISPER_LANG`            | `en`                 | Spoken language code, or `auto` to detect it                                          |
-| `WHISPER_MODEL`           | `large-v3-turbo`     | ggml speech model                                                                     |
-| `WHISPER_VAD`             | `silero-v6.2.0`      | Voice activity detection model                                                        |
-| `WHISPER_THREADS`         | `8`                  | CPU threads for whisper                                                               |
-| `WHISPER_PROMPT`          | empty                | Vocabulary prompt file; empty uses the language's `prompt.txt`, `/dev/null` disables  |
-| `WHISPER_VERBATIM`        | `0`                  | `1` adds the language's fillers to the prompt (what `just transcribe-verbatim` sets)  |
-| `LOW_CONFIDENCE`          | `0.6`                | Segments with a mean token probability below this are marked                          |
-| `RECHECK_MODEL`           | `large-v3`           | Model used by `just recheck`                                                          |
-| `STATS_TARGET_WPM`        | empty                | Optional target pace in words per minute; `just stats` then compares the pace with it |
-| `MIC_DEVICE`              | `0`                  | Audio input index from `just devices`                                                 |
-| `WHISPER_RECORDINGS_DIR`  | `recordings`         | Where the WAV recordings live                                                         |
-| `WHISPER_TRANSCRIPTS_DIR` | `transcripts`        | Where the transcripts and exports are written                                         |
-| `WHISPER_MODELS_DIR`      | `models`             | Where the ggml models live                                                            |
-| `WHISPER_DIR`             | `vendor/whisper.cpp` | whisper.cpp checkout; another path for experiments                                    |
-| `WHISPER_REF`             | empty                | Ref for `just checkout` and `just upgrade`; empty means the recorded submodule commit |
-| `WHISPER_REPO`            | upstream URL         | Repository `just clone` uses when `WHISPER_DIR` is not the submodule                  |
-| `COREML_PYTHON`           | `3.13`               | Python version for the Core ML conversion                                             |
+| Setting                   | Default              | Meaning                                                                                       |
+| ------------------------- | -------------------- | --------------------------------------------------------------------------------------------- |
+| `WHISPER_LANG`            | `en`                 | Spoken language code, or `auto` to detect it                                                  |
+| `WHISPER_MODEL`           | `large-v3-turbo`     | ggml speech model                                                                             |
+| `WHISPER_VAD`             | `silero-v6.2.0`      | Voice activity detection model                                                                |
+| `WHISPER_THREADS`         | `8`                  | CPU threads for whisper                                                                       |
+| `WHISPER_PROMPT`          | empty                | Vocabulary prompt file; empty uses the language's `prompt.txt`, `/dev/null` disables          |
+| `WHISPER_VERBATIM`        | `0`                  | `1` adds the language's fillers to the prompt (what `just transcribe-verbatim` sets)          |
+| `LOW_CONFIDENCE`          | `0.6`                | Segments with a mean token probability below this are marked                                  |
+| `RECHECK_MODEL`           | `large-v3`           | Model used by `just recheck`                                                                  |
+| `STATS_TARGET_WPM`        | empty                | Optional target pace in words per minute; `just stats` then compares the pace with it         |
+| `MIC_DEVICE`              | empty                | Audio input: empty follows the macOS default input; or an index or a name from `just devices` |
+| `WHISPER_RECORDINGS_DIR`  | `recordings`         | Where the WAV recordings live                                                                 |
+| `WHISPER_TRANSCRIPTS_DIR` | `transcripts`        | Where the transcripts and exports are written                                                 |
+| `WHISPER_MODELS_DIR`      | `models`             | Where the ggml models live                                                                    |
+| `WHISPER_DIR`             | `vendor/whisper.cpp` | whisper.cpp checkout; another path for experiments                                            |
+| `WHISPER_REF`             | empty                | Ref for `just checkout` and `just upgrade`; empty means the recorded submodule commit         |
+| `WHISPER_REPO`            | upstream URL         | Repository `just clone` uses when `WHISPER_DIR` is not the submodule                          |
+| `COREML_PYTHON`           | `3.13`               | Python version for the Core ML conversion                                                     |
 
 ## whisper.cpp version
 
@@ -172,7 +172,7 @@ WHISPER_REF=master just upgrade   # follow master on purpose
 - `justfile`: the commands above; each one calls a script.
 - `scripts/`: one bash script per command (`transcribe.sh`, `checkout.sh`, `check.sh`, ...) and `scripts/lib/common.sh` with the settings, derived paths and helpers they share. Written for bash 3.2 as well, so they run with the macOS `/bin/bash`; `just lint` checks them.
 - `config/lang/<code>/`: one directory per language (`en`, `it` shipped): `fillers.txt` (counted by `just stats`, injected by `just transcribe-verbatim`), `smoke-test.txt` (sentence and expected word for `just test`), `prompt.example.txt` (generic vocabulary prompt, tracked) and your `prompt.txt` (git-ignored, created by `just prompt`). See `config/lang/README.md`.
-- `scripts/mic-capture.swift`: the microphone recorder behind `just record`, `just live` and `just devices`. It writes what the device delivers (its sample rate and channels, 24-bit) and reports clipped input and lost audio. Compiled on first use into `.build/`, git-ignored.
+- `scripts/mic-capture.swift`: the microphone recorder behind `just record`, `just live` and `just devices`. It records what the device delivers (its sample rate and channels, 24-bit), pauses and resumes, and reports clipped input and lost audio. Compiled on first use into `.build/`, git-ignored.
 - `scripts/transcript-stats.py`: duration, speaking time, pace, pauses, filler words and low-confidence segments from the JSON transcript. `scripts/stats.sh` runs it with `uv run python -I`.
 - `scripts/transcript-timestamps.py`: the JSON transcript as `[mm:ss] text` lines, with `[?]` on low-confidence segments; `scripts/export.sh` embeds that in the Markdown export.
 - `scripts/transcript-index.py`: the table in `transcripts/INDEX.md`, written by `just export-all`.
@@ -180,7 +180,7 @@ WHISPER_REF=master just upgrade   # follow master on purpose
 - `CLAUDE.md`: conventions for Claude Code when it works in this repository.
 - `pyproject.toml`, `.python-version`, `uv.lock`: the uv project. Python 3.15, no dependencies. `uv sync` creates `.venv/`, git-ignored.
 - `.nvmrc`: Node.js 26, for the Prettier recipes only.
-- `recordings/`: WAV files at 16 kHz mono, git-ignored. `recordings/originals/` holds the full-quality takes of `just record` and `just live`, and the source files copied by `just convert`.
+- `recordings/`: WAV files at 16 kHz mono, git-ignored. `recordings/originals/` holds the full-quality takes of `just record` and `just live` as FLAC, and the source files copied by `just convert`.
 - `transcripts/`: `.txt`, `.srt`, `.json` (full, with token probabilities), `.log`, `.md`, `.timestamps.txt` and, after `just recheck`, `.recheck.md` per recording, plus `INDEX.md`, git-ignored. The log starts with the whisper.cpp version, model, prompt and flags that produced the transcript.
 - `CHANGELOG.md`: what changed in each version, Keep a Changelog format.
 - `LICENSE`: MIT. whisper.cpp, vendored as a submodule, is MIT as well.
