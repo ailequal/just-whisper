@@ -4,6 +4,10 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- whisper.cpp pinned to release `v1.9.6`; the pin was `v1.9.5`.
+
 ## [1.2.0] - 2026-11-20
 
 ### Added

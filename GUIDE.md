@@ -2,7 +2,7 @@
 
 This guide sets up a fully local transcription pipeline on a Mac with Apple Silicon. The repository is a wrapper around [whisper.cpp](https://github.com/ggml-org/whisper.cpp): it builds a pinned release, downloads OpenAI's `large-v3-turbo` model, converts any audio or video file (or records from the microphone), transcribes it, and writes plain text, subtitles, JSON with timestamps and a Markdown export. What you do with the text afterwards is yours: notes, meeting minutes, subtitles, an LLM prompt.
 
-It was written and tested on a MacBook Pro M4 Pro with 24 GB of RAM running macOS 26, with the default `zsh` shell, mostly on recordings in Italian. The default language is English; any other language Whisper supports is one setting, `WHISPER_LANG`. Older macOS versions are untested. The target is macOS on Apple Silicon only: recording, playback and the smoke test use macOS frameworks and tools, and the build relies on Metal. Every command below was run on that machine with whisper.cpp at the release tag `v1.9.5` (commit `d1be6fde`). The commands are wrapped in the `justfile` of this repository, which launches one bash script per command from `scripts/`; each step shows the `just` recipe and what the script runs, so you can do it by hand. Settings are environment variables with defaults in `scripts/lib/common.sh`; the README lists them in a table.
+It was written and tested on a MacBook Pro M4 Pro with 24 GB of RAM running macOS 26, with the default `zsh` shell, mostly on recordings in Italian. The default language is English; any other language Whisper supports is one setting, `WHISPER_LANG`. Older macOS versions are untested. The target is macOS on Apple Silicon only: recording, playback and the smoke test use macOS frameworks and tools, and the build relies on Metal. Every command below was run on that machine with whisper.cpp at the release tag `v1.9.6` (commit `96ec4d98`). The commands are wrapped in the `justfile` of this repository, which launches one bash script per command from `scripts/`; each step shows the `just` recipe and what the script runs, so you can do it by hand. Settings are environment variables with defaults in `scripts/lib/common.sh`; the README lists them in a table.
 
 In a hurry: the README quick start is the short version. This guide explains what each step does, why, and what to do when something is off.
 
@@ -64,9 +64,9 @@ Measured on the M4 Pro with 24 GB:
 | ---------------------------------- | -------------------------------------------- |
 | Model on disk                      | 1.5 GiB (`ggml-large-v3-turbo.bin`)          |
 | Peak memory of whisper-cli         | about 2.0 GB                                 |
-| Encoder, one 30 s window           | about 0.5 s (`whisper-bench`: 514 ms)        |
+| Encoder, one 30 s window           | about 0.5 s (`whisper-bench`: 519 ms)        |
 | Decoder                            | about 2 ms per token                         |
-| 63 s of Italian speech, end to end | 3.2 s                                        |
+| 63 s of Italian speech, end to end | 3.1 s                                        |
 | Estimate for a 40 minute recording | about 2 minutes (extrapolated, not measured) |
 
 24 GB is far more than needed. The full `large-v3` (2.9 GiB, 32 decoder layers) also fits and runs, but it is slower and not more accurate on clean Italian speech. The quantized `large-v3-turbo-q5_0` (547 MiB) is an option for a laptop on battery, with a small accuracy cost.
@@ -134,24 +134,24 @@ just clone                                     # after a plain clone: git submod
 just status                                    # checkout, recorded commit, newest release upstream, build and smoke test state, models
 ```
 
-To experiment with another checkout, export `WHISPER_DIR=/path/to/whisper.cpp` before any `just` command: the recipes then build and run from there, and `just pin` refuses, since only the submodule can be recorded. When nothing is at that path yet, `WHISPER_REF=v1.9.5 just clone` clones `WHISPER_REPO` (the upstream URL by default) there at that ref.
+To experiment with another checkout, export `WHISPER_DIR=/path/to/whisper.cpp` before any `just` command: the recipes then build and run from there, and `just pin` refuses, since only the submodule can be recorded. When nothing is at that path yet, `WHISPER_REF=v1.9.6 just clone` clones `WHISPER_REPO` (the upstream URL by default) there at that ref.
 
 ### Why a release tag and not master
 
 How upstream releases work (ggml-org policy, [discussion #1579](https://github.com/ggml-org/ggml/discussions/1579)):
 
-- A release is a tag on `master`, roughly monthly (v1.9.2 on 2026-08-04, v1.9.3 on 08-20, v1.9.4 on 09-11, v1.9.5 on 10-06). There are no release or maintenance branches and no backports.
-- A `vX.Y.Z` tag marks the commit where the bundled ggml matches a released ggml and the release CI ran; it is built with `WHISPER_BUILD_IS_DEV=OFF`, so `whisper-cli --version` prints `1.9.5` instead of `1.9.5-dev`.
+- A release is a tag on `master`, roughly monthly (v1.9.2 on 2026-08-04, v1.9.3 on 08-20, v1.9.4 on 09-11, v1.9.5 on 10-06, v1.9.6 on 11-23). There are no release or maintenance branches and no backports.
+- A `vX.Y.Z` tag marks the commit where the bundled ggml matches a released ggml and the release CI ran; it is built with `WHISPER_BUILD_IS_DEV=OFF`, so `whisper-cli --version` prints `1.9.6` instead of `1.9.6-dev`.
 - Between releases, `master` receives daily `sync : ggml` imports of llama.cpp backend work. On 2026-10-27 it was 135 commits past v1.9.5: 126 backend syncs (several touching Metal kernels), 9 whisper-side commits worth 16 lines in `src/whisper.cpp`.
 
-The value is reproducibility: the same binary for every transcript, so a change in the output is the audio and not a kernel update pulled in by `git pull`. The pinned version is the commit recorded for the submodule (`v1.9.5`, `git ls-tree HEAD vendor/whisper.cpp`); `WHISPER_REF` in the environment names a different ref for `just checkout` and `just upgrade`.
+The value is reproducibility: the same binary for every transcript, so a change in the output is the audio and not a kernel update pulled in by `git pull`. The pinned version is the commit recorded for the submodule (`v1.9.6`, `git ls-tree HEAD vendor/whisper.cpp`); `WHISPER_REF` in the environment names a different ref for `just checkout` and `just upgrade`.
 
 ### Switching versions
 
 ```bash
 just versions              # tags with dates, current checkout, recorded commit, how far master is ahead
-just checkout v1.9.4       # detached checkout of a tag (or a commit); then `just build`
-just upgrade v1.9.6        # checkout + build + smoke test, for a newer release
+just checkout v1.9.5       # detached checkout of a tag (or a commit); then `just build`
+just upgrade v1.9.7        # checkout + build + smoke test, for a newer release
 just upgrade               # back to the recorded commit
 WHISPER_REF=master just upgrade   # follow master on purpose (branch, fast-forwarded)
 just pin                   # record the checked-out commit as the new pin, in a commit of this repository
@@ -169,7 +169,7 @@ just build
 # scripts/build.sh:
 #   cmake -S vendor/whisper.cpp -B vendor/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_SDL2=ON -DWHISPER_BUILD_IS_DEV=OFF -DWHISPER_COREML=OFF
 #   cmake --build vendor/whisper.cpp/build -j --config Release
-#   vendor/whisper.cpp/build/bin/whisper-cli --version      -> whisper.cpp version: 1.9.5
+#   vendor/whisper.cpp/build/bin/whisper-cli --version      -> whisper.cpp version: 1.9.6
 ```
 
 What the flags mean:
@@ -187,7 +187,7 @@ The smoke test covers the whole chain. It synthesizes a sentence in `WHISPER_LAN
 ```bash
 just test
 # [00:00] Good morning, everyone. This is a transcription test in English with Whisper.
-# ok: whisper-cli 1.9.5 transcribes 'en' (voice Albert); convert, transcribe, stats and export passed
+# ok: whisper-cli 1.9.6 transcribes 'en' (voice Albert); convert, transcribe, stats and export passed
 WHISPER_LANG=it just test       # the Italian sentence, with an Italian voice
 ```
 
@@ -502,7 +502,7 @@ Record with Voice Memos on the iPhone. When back, the memo is in Voice Memos on 
 
 English is the default. `WHISPER_LANG=it just transcribe interview` for an Italian file: the Italian example prompt, fillers and smoke test come with it, and `WHISPER_LANG=it just prompt` creates your Italian vocabulary file. To use Italian by default, export `WHISPER_LANG=it` in your shell profile.
 
-Every other language takes its code the same way: `WHISPER_LANG=fr`, `de`, `es`, `ja` and so on. whisper.cpp `v1.9.5` knows 100 language codes. A language without a directory in `config/lang/` transcribes with no vocabulary prompt and no filler count; `config/lang/README.md` says how to add one.
+Every other language takes its code the same way: `WHISPER_LANG=fr`, `de`, `es`, `ja` and so on. whisper.cpp `v1.9.6` knows 100 language codes. A language without a directory in `config/lang/` transcribes with no vocabulary prompt and no filler count; `config/lang/README.md` says how to add one.
 
 When you do not know the language of a file, `WHISPER_LANG=auto` detects it once, at the beginning of the file, and uses it for the whole file. No vocabulary prompt is applied; `just stats` still counts the fillers when the detected language has a directory in `config/lang/`.
 
@@ -571,7 +571,7 @@ just lint                                    # shellcheck + /bin/bash 3.2 parse 
 just python                                  # uv python install + uv sync (Python 3.15)
 just versions                                # whisper.cpp releases, checkout, recorded commit
 just status                                  # checkout vs recorded, build and smoke test state, models
-just upgrade v1.9.6                          # switch release, build, smoke test
+just upgrade v1.9.7                          # switch release, build, smoke test
 just pin                                     # commit the new submodule commit as the pin
 just check                                   # what is installed and where
 just prompt                                  # create config/lang/en/prompt.txt, your vocabulary
@@ -613,7 +613,7 @@ just clean                                   # remove the transcripts (asks firs
 
 # without just: same scripts, same env overrides
 scripts/transcribe.sh name --max-len 100
-WHISPER_REF=v1.9.4 scripts/checkout.sh && scripts/build.sh
+WHISPER_REF=v1.9.5 scripts/checkout.sh && scripts/build.sh
 
 # raw whisper-cli, same as the recipe
 vendor/whisper.cpp/build/bin/whisper-cli -m models/ggml-large-v3-turbo.bin \

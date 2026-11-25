@@ -71,7 +71,7 @@ Required:
 - **just** 1.27 or later, **uv**, **cmake** and **ffmpeg**. `scripts/deps.sh install` installs the missing ones with Homebrew.
 - **Python 3.15**, pinned in `.python-version` and installed by uv (`just python`). Every Python command goes through `uv run`; never call `python3` directly. The scripts use the standard library only.
 
-`just setup` then fetches the whisper.cpp submodule at the release tag **`v1.9.5`**, builds it, and downloads `ggml-large-v3-turbo.bin` (1.5 GiB) and the Silero VAD model into `models/`. The Homebrew formula of whisper.cpp is not a replacement: it lacks the model scripts and Core ML (GUIDE.md, section 12).
+`just setup` then fetches the whisper.cpp submodule at the release tag **`v1.9.6`**, builds it, and downloads `ggml-large-v3-turbo.bin` (1.5 GiB) and the Silero VAD model into `models/`. The Homebrew formula of whisper.cpp is not a replacement: it lacks the model scripts and Core ML (GUIDE.md, section 12).
 
 Optional:
 
@@ -153,12 +153,12 @@ Settings are environment variables with their defaults in `scripts/lib/common.sh
 
 ## whisper.cpp version
 
-whisper.cpp is the git submodule `vendor/whisper.cpp`, and the commit recorded for it in this repository is the pin: the release tag `v1.9.5`, not `master`. Upstream cuts a release about once a month as a tag on `master`; there are no maintenance branches, and between releases `master` receives daily backend syncs from llama.cpp (Metal included) that no whisper.cpp release has validated. Pinning gives the same binary for every transcript, a version to write next to it, and a git history of every upgrade. Details and the comparison with `master` are in GUIDE.md, section 4.
+whisper.cpp is the git submodule `vendor/whisper.cpp`, and the commit recorded for it in this repository is the pin: the release tag `v1.9.6`, not `master`. Upstream cuts a release about once a month as a tag on `master`; there are no maintenance branches, and between releases `master` receives daily backend syncs from llama.cpp (Metal included) that no whisper.cpp release has validated. Pinning gives the same binary for every transcript, a version to write next to it, and a git history of every upgrade. Details and the comparison with `master` are in GUIDE.md, section 4.
 
 ```bash
 just versions            # what exists, what is checked out, what is recorded
 just status              # checkout vs recorded commit, build and smoke test state
-just upgrade v1.9.6      # try a newer release: checkout, build, smoke test
+just upgrade v1.9.7      # try a newer release: checkout, build, smoke test
 just pin                 # keep it: commit the new submodule commit
 just upgrade             # back to the recorded version
 WHISPER_REF=master just upgrade   # follow master on purpose
@@ -189,13 +189,13 @@ WHISPER_REF=master just upgrade   # follow master on purpose
 
 ## Measured on this machine
 
-MacBook Pro M4 Pro, 24 GB, whisper.cpp release `v1.9.5` (commit d1be6fde), Metal, `ggml-large-v3-turbo.bin`:
+MacBook Pro M4 Pro, 24 GB, whisper.cpp release `v1.9.6` (commit 96ec4d98), Metal, `ggml-large-v3-turbo.bin`:
 
 | What                               | Value                |
 | ---------------------------------- | -------------------- |
 | Model on disk                      | 1.5 GiB              |
 | Peak memory of `whisper-cli`       | about 2.0 GB         |
-| 63 s of Italian speech             | 3.2 s total          |
+| 63 s of Italian speech             | 3.1 s total          |
 | Encoder (one 30 s window)          | about 0.5 s          |
 | Decoder                            | about 2 ms per token |
 | Expected for a 40 minute recording | about 2 minutes      |
