@@ -1,6 +1,6 @@
 [project]
 name = "just-whisper"
-version = "1.2.0"
+version = "1.2.1"
 description = "Local, offline speech-to-text on Apple Silicon: record or convert audio, transcribe it with whisper.cpp and large-v3-turbo."
 readme = "README.md"
 license = "MIT"

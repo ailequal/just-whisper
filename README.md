@@ -14,7 +14,7 @@ The wrapper handles the steps whisper.cpp leaves to you:
 
 What you do with the transcript afterwards (notes, meeting minutes, subtitles, an LLM prompt) is outside this tool.
 
-Version 1.2.0 ([CHANGELOG.md](CHANGELOG.md)). Developed, measured and tested on a MacBook Pro M4 Pro with 24 GB of RAM running macOS 26. [GUIDE.md](GUIDE.md) explains every step, the settings, the common problems and their fixes.
+Version 1.2.1 ([CHANGELOG.md](CHANGELOG.md)). Developed, measured and tested on a MacBook Pro M4 Pro with 24 GB of RAM running macOS 26. [GUIDE.md](GUIDE.md) explains every step, the settings, the common problems and their fixes.
 
 > **AI usage disclosure**: This codebase was written with LLM-based tools. It is reviewed and tested, but bugs and odd patterns are possible. Review before relying on it in production.
 

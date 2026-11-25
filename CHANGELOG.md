@@ -4,6 +4,8 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-25
+
 ### Changed
 
 - whisper.cpp pinned to release `v1.9.6`; the pin was `v1.9.5`.
@@ -60,7 +62,8 @@ All notable changes to just-whisper are documented here. The format follows [Kee
 - Optional Core ML encoder build (`just coreml`), kept by later builds while the encoder is in `models/`.
 - README, GUIDE with setup, recording methods, tuning, scenarios, FAQ and cheat sheet; MIT license.
 
-[Unreleased]: https://github.com/ailequal/just-whisper/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ailequal/just-whisper/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/ailequal/just-whisper/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ailequal/just-whisper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ailequal/just-whisper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ailequal/just-whisper/releases/tag/v1.0.0
